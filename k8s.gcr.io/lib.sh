@@ -34,6 +34,11 @@ function color() {
 # The group that admins all GCR repos.
 GCR_ADMINS="k8s-infra-gcr-admins@googlegroups.com"
 
+# The group that admins all GCS buckets.
+# TODO: Do we want a separate group from GCR??
+#GCS_ADMINS="k8s-infra-gcs-admins@googlegroups.com"
+GCS_ADMINS=$GCR_ADMINS
+
 # The service account name for the image promoter.
 PROMOTER_SVCACCT="k8s-infra-gcr-promoter"
 
@@ -195,7 +200,33 @@ function empower_gcr_admins() {
         "${bucket}"
 }
 
-# Grant write privileges to a group
+# Grant full privileges to GCS admins
+# $1: The GCP project
+# $2: The bucket
+function empower_gcs_admins() {
+    if [ $# -ne 2 -o -z "$1" -o -z "$2" ]; then
+        echo "empower_gcs_admins(project, bucket) requires 2 arguments" >&2
+        return 1
+    fi
+    project="$1"
+    bucket="${2}"
+
+    # Grant project viewer so the UI will work.
+    gcloud \
+        projects add-iam-policy-binding "${project}" \
+        --member "group:${GCS_ADMINS}" \
+        --role roles/viewer
+
+    # Grant admins access to do admin stuff.
+    gsutil iam ch \
+        "group:${GCS_ADMINS}:objectAdmin" \
+        "${bucket}"
+    gsutil iam ch \
+        "group:${GCS_ADMINS}:legacyBucketOwner" \
+        "${bucket}"
+}
+
+# Grant GCR write privileges to a group
 # $1: The GCP project
 # $2: The googlegroups group
 # $3: The GCR region (optional)
@@ -208,6 +239,27 @@ function empower_group() {
     group="$2"
     region="${3:-}"
     bucket=$(gcs_bucket_for "${project}" "${region}")
+
+    gsutil iam ch \
+        "group:${group}:objectAdmin" \
+        "${bucket}"
+    gsutil iam ch \
+        "group:${group}:legacyBucketReader" \
+        "${bucket}"
+}
+
+# Grant write privileges on a bucket to a group
+# $1: The GCP project
+# $2: The googlegroups group
+# $3: The bucket
+function empower_group_to_bucket() {
+    if [ $# -ne 3 --o -z "$1" -o -z "$2" -o -z "$3" ]; then
+        echo "empower_group_to_bucket(project, group_name, bucket) requires 3 arguments" >&2
+        return 1
+    fi
+    project="$1"
+    group="$2"
+    bucket="$3"
 
     gsutil iam ch \
         "group:${group}:objectAdmin" \
